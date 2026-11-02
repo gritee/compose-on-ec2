@@ -3,4 +3,4 @@
 account_id        = "646323602481"
 region            = "us-east-1"
 name              = "varpad"
-github_repository = "gritee/varpad"
+github_repository = "gritee/compose-on-ec2"
