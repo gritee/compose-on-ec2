@@ -37,9 +37,9 @@ account other than `account_id` in `project.auto.tfvars`.
 
 ## First-time setup
 
-Start by filling in `infra/project.auto.tfvars`. In a copy of this repo, also delete
-`infra/bootstrap/terraform.tfstate` and `infra/backend.hcl`: they describe the original's
-state bucket.
+Start by filling in `infra/project.auto.tfvars`. If `infra/bootstrap/terraform.tfstate` or
+`infra/backend.hcl` exist from an earlier setup (or from the repo this one was copied from),
+delete them: they describe another state bucket. Setup recreates both.
 
 If these modules were initialized before against a different bucket (an earlier setup that
 was torn down, or a working copy reused for a new project), delete each module's
