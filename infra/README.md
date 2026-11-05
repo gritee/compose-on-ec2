@@ -41,6 +41,11 @@ Start by filling in `infra/project.auto.tfvars`. In a copy of this repo, also de
 `infra/bootstrap/terraform.tfstate` and `infra/backend.hcl`: they describe the original's
 state bucket.
 
+If these modules were initialized before against a different bucket (an earlier setup that
+was torn down, or a working copy reused for a new project), delete each module's
+`.terraform/` directory first, or pass `-reconfigure` to `terraform init`. Otherwise `init`
+reports that the cached backend configuration has changed.
+
 Steps 1–4 run as the account's root user, once. Everything after runs as the admin identity.
 
 1. **Create the state bucket**
@@ -133,6 +138,63 @@ These destroy the server and create a new one (new root disk; the Elastic IP mov
 - `terraform apply -replace=aws_instance.app` (also the way to adopt a newer Ubuntu AMI,
   which is otherwise ignored)
 - some instance argument changes. The plan says `must be replaced`.
+
+### Renaming the GitHub repo
+
+The deploy roles trust GitHub's OIDC tokens only when they come from this repo, and those
+tokens include the repo's name. After a rename, deploys fail until the roles are updated:
+
+1. Rename the repo, then `git remote set-url origin <new URL>`.
+2. Set `github_repository` in `project.auto.tfvars` to the new name, then plan and apply.
+   Expect in-place updates to the roles' trust policies and nothing replaced.
+
+Do this before anything else takes the old name. GitHub redirects the old name to the new
+one only until another repo claims it. After that, the old name refers to the other repo.
+
+## Tearing down
+
+Destroy in the reverse order of setup: main module, then account, then bootstrap. Each one's
+state or credentials depend on the next.
+
+1. **Main module**, as the admin identity. Do this while `github_repository` still names
+   the repo, because it also deletes the `production` environment and Actions variables.
+   ```sh
+   just plan -destroy
+   just apply
+   ```
+   ECR repos are deleted along with their images. The Elastic IP is released, so a new
+   setup gets a different public IP (update any DNS records).
+2. **Account module**, as the **root user** (`aws login`). This deletes the admin identity,
+   including the `AWSReservedSSO_AdministratorAccess_...` role behind your SSO session,
+   so the admin can't run it. It needs `terraform.tfvars` from setup step 4.
+   ```sh
+   cd infra/account
+   terraform plan -destroy -out=tfplan
+   terraform apply tfplan
+   ```
+   IAM Identity Center itself stays enabled. To disable it, use the console.
+3. **Bootstrap**, as root. The bucket is protected twice: `prevent_destroy` makes Terraform
+   refuse, and S3 won't delete a bucket that still holds objects. It is versioned, so it
+   still holds every earlier state version. Remove both protections with one apply, then
+   destroy:
+   1. In `bootstrap/main.tf`, delete the `lifecycle { prevent_destroy = true }` block from
+      `aws_s3_bucket.tfstate`, and add `force_destroy = true` (which deletes all object
+      versions on destroy).
+   2. Apply, then destroy:
+      ```sh
+      cd infra/bootstrap
+      terraform plan -out=tfplan      # expect an in-place update to force_destroy only
+      terraform apply tfplan
+      terraform plan -destroy -out=tfplan
+      terraform apply tfplan
+      ```
+   3. Commit the edits and the now-empty `terraform.tfstate`. `main` then matches what's
+      deployed: nothing. Before setting up again, restore `prevent_destroy`, remove
+      `force_destroy`, and follow [First-time setup](#first-time-setup), including deleting
+      the old state file and `backend.hcl`.
+
+To set up again, also redo setup step 5. The new admin user is a new identity, so it needs
+the password setup email and MFA enrollment again.
 
 ## Project tasks (`just`)
 
