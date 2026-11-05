@@ -6,10 +6,9 @@ resource "aws_s3_bucket" "tfstate" {
   # Bucket names are global; the account ID and region keep this one unique.
   bucket = "${var.name}-tfstate-${data.aws_caller_identity.current.account_id}-${var.region}"
 
-  # TEARDOWN ONLY: prevent_destroy removed and force_destroy added so the bucket and every
-  # state version can be destroyed. Restore prevent_destroy and remove force_destroy
-  # before setting up again (see infra/README.md, Tearing down).
-  force_destroy = true
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Versioning lets you recover a previous state if an apply corrupts or loses it.
